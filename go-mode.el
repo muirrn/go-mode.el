@@ -58,14 +58,18 @@ function."
                         (progn (forward-visible-line arg) (point))))))
 
 (defun go-goto-opening-parenthesis (&optional _legacy-unused)
-  "Move up one level of parentheses."
+  "Move up one level of parentheses.
+
+Return non-nil if there was a paren to move up to."
   ;; The old implementation of go-goto-opening-parenthesis had an
   ;; optional argument to speed up the function.  It didn't change the
   ;; function's outcome.
 
   ;; Silently fail if there's no matching opening parenthesis.
   (condition-case nil
-      (backward-up-list)
+      (progn
+        (backward-up-list)
+        t)
     (scan-error nil)))
 
 
@@ -583,16 +587,23 @@ current line will be returned."
           (current-indentation))
       (current-indentation))))
 
-(defun go--line-opens-paren-p ()
-  "Returns whether current line opens a paren that contains point."
+(defun go--between-parens-p ()
+  "Return non-nil if point is between '(' and ')'"
   (save-excursion
-    (let ((start-paren-level (go-paren-level))
-          (line-beginning (line-beginning-position)))
+    (let ((start-paren-level (go-paren-level)))
       (go-goto-opening-parenthesis)
-      (and
-       (eq (char-after) ?\() ; opening paren-like character is actually a paren
-       (< (go-paren-level) start-paren-level) ; point is before the closing paren
-       (>= (point) line-beginning))))) ; still on starting line
+      (if (and
+           (eq (char-after) ?\() ; opening paren-like character is actually a paren
+           (< (go-paren-level) start-paren-level)) ; point is before the closing paren
+          (point)
+        nil))))
+
+(defun go--line-opens-paren-p ()
+  "Return non-nil if current line opens a paren that contains point."
+  (let ((open-paren-pos (go--between-parens-p)))
+    (and
+     open-paren-pos
+     (>= open-paren-pos (line-beginning-position))))) ; still on starting line
 
 (defun go-indentation-at-point ()
   (save-excursion
@@ -608,17 +619,15 @@ current line will be returned."
         (if (and
              (not (eq (char-after) ?\()) ; opening parens always indent
              (go-previous-line-has-dangling-op-p))
-            (- (current-indentation) tab-width)
+            (+ (current-indentation) (* tab-width (- 0 (go--closed-dangling-expr-count))))
           (go--indentation-for-opening-parenthesis)))
-       ((progn (go--backward-irrelevant t)
-               (looking-back go-dangling-operators-regexp
-                             (- (point) go--max-dangling-operator-length)))
+       ((let ((dangling-line (go-previous-line-has-dangling-op-p)))
+         (when dangling-line (goto-char dangling-line) (end-of-line) t))
         ;; only one nesting for all dangling operators in one operation
         (if (and
              (not (go--line-opens-paren-p))
              (go-previous-line-has-dangling-op-p))
-            (progn
-              (current-indentation))
+            (current-indentation)
           (+ (current-indentation) tab-width)))
        ((zerop (go-paren-level))
         0)
@@ -626,10 +635,67 @@ current line will be returned."
         (if (and
              (not (eq (char-after) ?\()) ; opening parens always indent
              (go-previous-line-has-dangling-op-p))
-            (current-indentation)
+            (+ (current-indentation) (* tab-width (- 1 (go--closed-dangling-expr-count))))
           (+ (go--indentation-for-opening-parenthesis) tab-width)))
        (t
         (current-indentation))))))
+
+(defun go--closed-dangling-expr-count ()
+  "Return count of dangling expressions that end on current line.
+
+This handles cases like
+
+if foo ||
+   (foo ||
+     foo) {
+
+where the indentation in the if block needs to undo the dangling
+indents."
+
+  (save-excursion
+    (beginning-of-line)
+
+    (let ((line-start (point))
+          (keep-going t)
+          (last-dangling-line)
+          (count 0))
+
+      ;; Look for closing parens on this line char by char. If corresponding
+      ;; opening paren's previous line is dangling, increment counter.
+
+      (while keep-going
+        (setq keep-going nil)
+        (let ((char (char-after)))
+          (when char
+            (when (and (eq char ?\)))
+              (save-excursion
+                (when (go-goto-opening-parenthesis)
+                  (let ((open-paren-line (line-beginning-position)))
+                    (forward-line)
+                    (when (and
+                           ;; don't let the same dangling line increment more than once
+                           (not (eq open-paren-line last-dangling-line))
+                           (go-previous-line-has-dangling-op-p))
+                      (setq count (1+ count))
+                      (setq last-dangling-line (line-beginning-position)))))))
+            (forward-char)
+            (setq keep-going (= line-start (line-beginning-position))))))
+
+
+      ;; last-dangling-line will be the minimum dangling line we found (since
+      ;; we examine the outermouse paren last)
+      (if last-dangling-line
+          (goto-char last-dangling-line)
+        ;; otherwise go back to our starting line
+        (goto-char line-start))
+      ;; this checks for an optional non-parenthesized dangling line:
+      ;; for foo &&    // non-parenthesized dangling line
+      ;;       (bar && // parenthesized dangling line
+      ;;         baz) {
+      (when (go-previous-line-has-dangling-op-p)
+        (setq count (1+ count)))
+
+    count)))
 
 (defun go-mode-indent-line ()
   (interactive)
