@@ -61,6 +61,19 @@ KinterfaceK {
   FfooF(KinterfaceK { FaF() TintT }) (c TdT)
 }"))
 
+
+(ert-deftest go--fontify-type-switch ()
+  (should-fontify "
+KswitchK foo.(KtypeK) {
+KcaseK TstringT, *Tfmt.StringerT, [2]TbyteT:
+}")
+
+  (should-fontify "
+KswitchK 123 {
+KcaseK string:
+}"))
+
+
 (defun should-fontify (contents)
   "Verify fontification.
 
