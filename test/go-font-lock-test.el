@@ -50,6 +50,17 @@ KstructK {
   c KstructK { f *Tfmt.StringerT }
 }"))
 
+(ert-deftest go--fontify-interface ()
+  (should-fontify "
+KinterfaceK {
+  FfooF(a, b TcT) *TstringT
+}")
+
+  (should-fontify "
+KinterfaceK {
+  FfooF(KinterfaceK { FaF() TintT }) (c TdT)
+}"))
+
 (defun should-fontify (contents)
   "Verify fontification.
 
