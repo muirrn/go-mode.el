@@ -236,3 +236,40 @@ func main() {
    Lorem ipsum.
 */"
    ))
+
+(ert-deftest go--fill-paragraph-multiline-string ()
+  (go--should-fill
+   "`
+<>Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+`"
+   "`
+Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do
+eiusmod tempor incididunt ut labore et dolore magna aliqua.
+`"
+   )
+
+  (go--should-fill
+   "`
+<Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.>
+`"
+   "`
+Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do
+eiusmod tempor incididunt ut labore et dolore magna aliqua.
+`"
+   )
+
+  (go--should-fill
+   "`
+<>
+`"
+   "`
+
+`"
+   )
+
+  (go--should-fill
+   "`
+<`>"
+   "`
+`"
+   ))

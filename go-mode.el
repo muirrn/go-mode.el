@@ -805,10 +805,48 @@ comment starter/closer characters."
      (not (go--boring-comment-p)))))
 
 (defun go--fill-forward-paragraph (&optional arg)
-  "forward-paragraph like function used for fill-paragraph.
+  (if (eq (go-in-string-p) ?`)
+      (go--string-forward-paragraph arg)
+    (go--comment-forward-paragraph arg)))
 
-This function is key for making fill-paragraph do the right
-thing for comments."
+(defun go--string-forward-paragraph (&optional arg)
+  "forward-paragraph like function used for filling within strings."
+  (beginning-of-line)
+  (let* ((string-start (nth 8 (syntax-ppss)))
+         (arg (or arg 1))
+         (single (if (> arg 0) 1 -1)))
+
+    ;; Basically, find newline delimited paragraphs being careful not
+    ;; to search outside of string.
+    (while (not (zerop arg))
+      (while (and
+              (go--empty-line-p)
+              (zerop (forward-line single))))
+
+      (while (and
+              (not (go--empty-line-p))
+              (eq string-start (nth 8 (syntax-ppss)))
+              (zerop (forward-line single))))
+
+      (cl-decf arg single))
+
+    (when (and
+           ;; If we are no longer inside our starting string, we need
+           ;; to back up.
+           (not (eq string-start (nth 8 (syntax-ppss))))
+           ;; Except if mark is active - don't back up so we are
+           ;; guaranteed to progress outside the region.
+           (not mark-active))
+      (if (not (bolp))
+          ;; If we aren't bolp, we must be eobp or bobp. Back up to
+          ;; bol to avoid backing up too much.
+          (beginning-of-line)
+        (forward-line (- single))))
+
+    arg))
+
+(defun go--comment-forward-paragraph (&optional arg)
+  "forward-paragraph like function used for filling within comments."
   (beginning-of-line)
   (let* ((arg (or arg 1))
          (single (if (> arg 0) 1 -1))
